@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --text: #16181d;
+        --muted: #667085;
+        --line: #e4e7ec;
+        --accent: #1f6feb;
+        --live: #d92d20;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #16181d;
+          --text: #f2f4f7;
+          --muted: #98a2b3;
+          --line: #2c3038;
+          --accent: #6ea8fe;
+          --live: #f97066;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        width: 320px;
+        margin: 0;
+        padding: 12px;
+        background: var(--bg);
+        color: var(--text);
+        font: 13px/1.4 "Segoe UI", system-ui, sans-serif;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 14px;
+      }
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        max-height: 320px;
+        overflow-y: auto;
+      }
+      li {
+        border-top: 1px solid var(--line);
+      }
+      li a {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 0 8px;
+        padding: 8px 0;
+        color: inherit;
+        text-decoration: none;
+      }
+      li a:hover .teams {
+        color: var(--accent);
+      }
+      .score {
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      .status {
+        grid-column: 1 / -1;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .status.live {
+        color: var(--live);
+      }
+      .empty,
+      #info {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .empty {
+        padding: 12px 0;
+        border-top: 1px solid var(--line);
+      }
+      #error {
+        color: var(--live);
+        font-size: 12px;
+      }
+      footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid var(--line);
+      }
+      button {
+        flex-shrink: 0;
+        padding: 4px 8px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Alerta de Gol</h1>
+      <button id="pause" type="button"></button>
+    </header>
+    <ul id="games"></ul>
+    <div id="error"></div>
+    <footer>
+      <span id="info"></span>
+      <button id="test" type="button">Testar notificação</button>
+    </footer>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

@@ -79,7 +79,14 @@ test("jogo sem placar antes do início vale 0 x 0, e o primeiro gol alerta", () 
   assert.deepEqual(readScore({ status: { type: "notstarted" } }), { home: 0, away: 0 });
   const notStarted = { ...event(), homeScore: {}, awayScore: {}, status: { type: "notstarted" } };
   const { games } = applySnapshot({}, [notStarted], RECENT, NOW);
-  assert.equal(applySnapshot(games, [event(1, 0)], RECENT, NOW).alerts.length, 1);
+  const types = applySnapshot(games, [event(1, 0)], RECENT, NOW).alerts.map((a) => a.change.type);
+  assert.ok(types.includes("goal"));
+});
+
+test("jogo salvo por versão anterior não gera aviso falso de etapa", () => {
+  const { alerts, games } = applySnapshot(stored(1, 0, { statusType: "inprogress" }), [event(1, 0)], RECENT, NOW);
+  assert.deepEqual(alerts, []);
+  assert.deepEqual(games[1].phasesSeen, ["second"]);
 });
 
 test("outros esportes ficam de fora, e quem saiu da leitura sai da lista", () => {
@@ -91,7 +98,108 @@ test("outros esportes ficam de fora, e quem saiu da leitura sai da lista", () =>
 
 test("gol nos últimos instantes alerta mesmo se o jogo já consta como encerrado", () => {
   const finished = event(2, 0, { status: { type: "finished" } });
-  assert.equal(applySnapshot(stored(1, 0), [finished], RECENT, NOW).alerts.length, 1);
+  const types = applySnapshot(stored(1, 0), [finished], RECENT, NOW).alerts.map((a) => a.change.type);
+  assert.deepEqual(types, ["goal", "final"]);
+});
+
+const titles = (result) => result.alerts.map((a) => buildNotification(a.game, a.change).title);
+
+const footballAt = (description, type, home = 0, away = 0, periods = {}) =>
+  event(home, away, {
+    status: { type, description },
+    homeScore: { current: home, ...periods },
+    awayScore: { current: away, ...periods },
+  });
+
+test("futebol: início, intervalo, 2º tempo e fim, cada um uma vez", () => {
+  let state = applySnapshot({}, [footballAt("Not started", "notstarted")], RECENT, NOW);
+  assert.deepEqual(state.alerts, []);
+
+  const steps = [
+    [footballAt("1st half", "inprogress", 0, 0, { period1: 0 }), ["🟢 Começou o jogo"]],
+    [footballAt("1st half", "inprogress", 0, 0, { period1: 0 }), []],
+    [footballAt("Halftime", "inprogress", 0, 0, { period1: 0 }), ["⏸ Fim do 1º tempo"]],
+    [footballAt("2nd half", "inprogress", 0, 0, { period1: 0, period2: 0 }), ["▶ Começou o 2º tempo"]],
+    [footballAt("2nd half", "inprogress", 0, 0, { period1: 0, period2: 0 }), []],
+    [footballAt("Ended", "finished", 0, 0, { period1: 0, period2: 0 }), ["🏁 Fim de jogo"]],
+    [footballAt("Ended", "finished", 0, 0, { period1: 0, period2: 0 }), []],
+  ];
+  for (const [step, expected] of steps) {
+    state = applySnapshot(state.games, [step], RECENT, NOW);
+    assert.deepEqual(titles(state), expected);
+  }
+});
+
+test("futebol: início mostra só os times, e os outros avisos mostram o placar", () => {
+  const { games } = applySnapshot({}, [footballAt("Not started", "notstarted")], RECENT, NOW);
+  const started = applySnapshot(games, [footballAt("1st half", "inprogress")], RECENT, NOW);
+  const start = started.alerts[0];
+  assert.equal(buildNotification(start.game, start.change).message, "Barcelona x Aston Villa");
+  const half = applySnapshot(started.games, [footballAt("Halftime", "inprogress", 2, 1)], RECENT, NOW);
+  const phase = half.alerts.find((a) => a.change.type === "phase");
+  assert.equal(buildNotification(phase.game, phase.change).message, "Barcelona 2 x 1 Aston Villa");
+});
+
+test("futebol: 2º tempo é detectado pelo placar mesmo se o texto do status mudar, e o intervalo não é obrigatório", () => {
+  const { games } = applySnapshot({}, [footballAt("1st half", "inprogress", 0, 0, { period1: 0 })], RECENT, NOW);
+  const state = applySnapshot(games, [footballAt("Segundo", "inprogress", 0, 0, { period1: 0, period2: 0 })], RECENT, NOW);
+  assert.deepEqual(titles(state), ["▶ Começou o 2º tempo"]);
+});
+
+test("futebol: prorrogação e pênaltis", () => {
+  let state = applySnapshot({}, [footballAt("2nd half", "inprogress", 1, 1, { period2: 1 })], RECENT, NOW);
+  state = applySnapshot(state.games, [footballAt("1st extra", "inprogress", 1, 1, { period2: 1, extra1: 0 })], RECENT, NOW);
+  assert.deepEqual(titles(state), ["⏱ Prorrogação"]);
+  state = applySnapshot(state.games, [footballAt("2nd extra", "inprogress", 1, 1, { period2: 1, extra1: 0 })], RECENT, NOW);
+  assert.deepEqual(titles(state), [], "2º tempo da prorrogação não repete");
+  state = applySnapshot(state.games, [footballAt("Penalties", "inprogress", 1, 1, { period2: 1, extra1: 0 })], RECENT, NOW);
+  assert.deepEqual(titles(state), ["🥅 Disputa de pênaltis"]);
+});
+
+test("abrir no meio do jogo não avisa etapas passadas", () => {
+  const { games, alerts } = applySnapshot({}, [footballAt("2nd half", "inprogress", 1, 0, { period1: 1, period2: 0 })], RECENT, NOW);
+  assert.deepEqual(alerts, []);
+  assert.deepEqual(titles(applySnapshot(games, [footballAt("2nd half", "inprogress", 1, 0, { period1: 1, period2: 0 })], RECENT, NOW)), []);
+});
+
+test("avisos de início e etapas respeitam leitura atrasada e página recém-carregada", () => {
+  const { games } = applySnapshot({}, [footballAt("Not started", "notstarted")], RECENT, NOW);
+  assert.deepEqual(applySnapshot(games, [footballAt("1st half", "inprogress")], NOW - 3600, NOW).alerts, []);
+  assert.deepEqual(applySnapshot(games, [footballAt("1st half", "inprogress")], RECENT, NOW, 30).alerts, []);
+});
+
+const esportsAt = (type, home, away, periods = {}) =>
+  event(home, away, {
+    status: { type },
+    homeTeam: { shortName: "FURIA" },
+    awayTeam: { name: "Legacy" },
+    homeScore: { current: home, ...periods },
+    awayScore: { current: away, ...periods },
+    tournament: { name: "IEM", category: { sport: { slug: "esports" } } },
+  });
+
+test("esports: início, fim e início de cada mapa, e o último mapa sai junto com o fim", () => {
+  let state = applySnapshot({}, [esportsAt("notstarted")], RECENT, NOW);
+  const steps = [
+    [esportsAt("inprogress", 0, 0, { period1: 0 }), ["🎮 Começou a partida"]],
+    [esportsAt("inprogress", 1, 0, { period1: 13 }), ["🎮 FURIA venceu o mapa!"]],
+    [esportsAt("inprogress", 1, 0, { period1: 13, period2: 0 }), ["🎮 Começou o mapa 2"]],
+    [esportsAt("finished", 2, 0, { period1: 13, period2: 13 }), ["🎮 Fim da partida"]],
+  ];
+  for (const [step, expected] of steps) {
+    state = applySnapshot(state.games, [step], RECENT, NOW);
+    assert.deepEqual(titles(state), expected);
+  }
+});
+
+test("basquete: início, e o fim do jogo não repete o aviso do último quarto", () => {
+  const at = (type, description, periods) => basket(periods, periods, description, type);
+  let state = applySnapshot({}, [at("notstarted", "Not started", [])], RECENT, NOW);
+  state = applySnapshot(state.games, [at("inprogress", "1st quarter", [2])], RECENT, NOW);
+  assert.deepEqual(titles(state), ["🏀 Começou o jogo"]);
+  state = applySnapshot(state.games, [at("inprogress", "4th quarter", [20, 20, 20, 5])], RECENT, NOW);
+  state = applySnapshot(state.games, [at("finished", "Ended", [20, 20, 20, 25])], RECENT, NOW);
+  assert.deepEqual(titles(state), ["🏀 Fim de jogo"]);
 });
 
 test("texto da notificação", () => {

@@ -1,14 +1,14 @@
 # Alerta de Gol para Sofascore
 
-Extensão para o Chrome que mostra uma notificação do Windows quando sai gol em um jogo dos seus favoritos no [Sofascore](https://www.sofascore.com). Projeto pessoal, sem vínculo com o Sofascore.
+Extensão para o Chrome que mostra notificações do Windows sobre os jogos dos seus favoritos no [Sofascore](https://www.sofascore.com). Projeto pessoal, sem vínculo com o Sofascore.
 
 ## O que ela avisa
 
 | Esporte | Aviso |
 |---|---|
-| Futebol, futsal e minifutebol | Gol e gol anulado |
-| Esports | Mapa vencido e placar corrigido |
-| Basquete | Fim de cada quarto e fim de jogo |
+| Futebol, futsal e minifutebol | Início, gol, gol anulado, fim do 1º tempo, início do 2º tempo, prorrogação, pênaltis e fim |
+| Esports | Início, início de cada mapa, mapa vencido, placar corrigido e fim |
+| Basquete | Início, fim de cada quarto e fim |
 
 Valem os jogos da sua aba Favoritos: com estrela, dos seus times e das suas ligas.
 

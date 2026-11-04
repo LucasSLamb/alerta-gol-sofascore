@@ -31,7 +31,7 @@ async function readFromTabs() {
 
 function notify({ game, change }) {
   // O id identifica o lance: se o mesmo gol ou quarto for detectado duas vezes, a notificação é substituída.
-  const detail = change.quarter ?? `${game.score.home}-${game.score.away}`;
+  const detail = change.quarter ?? change.phase ?? `${game.score?.home}-${game.score?.away}`;
   return chrome.notifications.create(`${change.type}|${game.id}|${detail}`, {
     type: "basic",
     iconUrl: "icons/icon128.png",

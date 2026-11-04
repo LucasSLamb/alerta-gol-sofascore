@@ -19,7 +19,10 @@ globalThis.AlertaGolFavorites = (() => {
     period2: score?.period2,
     period3: score?.period3,
     period4: score?.period4,
+    period5: score?.period5,
+    extra1: score?.extra1,
     overtime: score?.overtime,
+    penalties: score?.penalties,
   });
 
   const trim = (event) => ({

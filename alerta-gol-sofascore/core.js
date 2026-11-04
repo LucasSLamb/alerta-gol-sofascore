@@ -6,6 +6,7 @@
 const SCORE_ALERT_SPORTS = new Set(["football", "futsal", "minifootball", "esports"]);
 const QUARTER_SPORT = "basketball";
 const REGULAR_QUARTERS = 4;
+const MAX_MAPS = 5;
 
 // Com o Chrome fechado, gols acumulam. Depois de tanto tempo sem ler, o placar vira a nova
 // base em vez de disparar alertas atrasados.
@@ -95,20 +96,53 @@ function pointsThrough(score, quarters) {
   return total;
 }
 
-// O placar do jogo continua sendo guardado, mas só a virada de quarto e o fim geram alerta.
+// O placar do jogo continua sendo guardado, mas só a virada de quarto gera alerta aqui.
 function applyQuarters(previous, event, nowSeconds) {
   const { game } = applyEvent(previous, event, nowSeconds);
   const done = quartersDone(event);
   const alreadyDone = previous?.quartersDone ?? 0;
   game.quartersDone = Math.max(alreadyDone, done);
-  if (!previous) return { game, change: null };
-
-  if (event.status?.type === "finished" && previous.statusType !== "finished") {
-    return { game, change: { type: "final" } };
-  }
-  if (done <= alreadyDone) return { game, change: null };
+  if (!previous || done <= alreadyDone) return { game, change: null };
   const score = { home: pointsThrough(event.homeScore, done), away: pointsThrough(event.awayScore, done) };
   return { game, change: { type: "quarter", quarter: done, score } };
+}
+
+const hasPoints = (score, field) => Number.isInteger(score?.[field]);
+
+// Etapas que a leitura já mostra. O status pode mudar de texto, então os campos de
+// pontuação de cada tempo ou mapa também contam como sinal de que a etapa começou.
+function phasesIn(event, sport) {
+  const home = event.homeScore;
+  if (sport === QUARTER_SPORT) return [];
+  if (sport === "esports") {
+    const maps = [];
+    for (let n = 2; n <= MAX_MAPS; n++) {
+      if (hasPoints(home, `period${n}`)) maps.push(`map${n}`);
+    }
+    return maps;
+  }
+  const description = event.status?.description ?? "";
+  const phases = [];
+  if (/half.?time/i.test(description)) phases.push("halftime");
+  if (/2nd half/i.test(description) || hasPoints(home, "period2")) phases.push("second");
+  if (/extra/i.test(description) || hasPoints(home, "extra1") || hasPoints(home, "overtime")) phases.push("extra");
+  if (/penalt/i.test(description) || hasPoints(home, "penalties")) phases.push("penalties");
+  return phases;
+}
+
+// Início, fim e etapas do jogo. Cada etapa só avisa uma vez, mesmo que o status volte atrás.
+function lifecycleChanges(previous, event, game) {
+  const phases = phasesIn(event, game.sport);
+  // Jogo novo, ou salvo por uma versão anterior: o que já aconteceu vira a base, sem aviso.
+  const seen = previous?.phasesSeen ?? phases;
+  const newPhases = phases.filter((phase) => !seen.includes(phase));
+  game.phasesSeen = [...seen, ...newPhases];
+  if (!previous) return [];
+
+  const status = event.status?.type;
+  if (status === "finished") return previous.statusType === "finished" ? [] : [{ type: "final" }];
+  const changes = previous.statusType === "notstarted" && status === "inprogress" ? [{ type: "start" }] : [];
+  return [...changes, ...newPhases.map((phase) => ({ type: "phase", phase }))];
 }
 
 // Transforma uma leitura do site na nova lista de jogos e nos alertas a disparar.
@@ -123,20 +157,46 @@ export function applySnapshot(games, events, lastReadAt, nowSeconds, pageAgeSeco
     if (!isAlertSport(sport)) continue;
     const apply = sport === QUARTER_SPORT ? applyQuarters : applyEvent;
     const { game, change } = apply(games[event.id], event, nowSeconds);
+    const lifecycle = lifecycleChanges(games[event.id], event, game);
     result[event.id] = game;
-    if (change && !silent) alerts.push({ game, change });
+    if (silent) continue;
+    // O último mapa ou quarto termina junto com o jogo, então o aviso de fim já cobre os dois.
+    // No futebol o gol tem aviso próprio, mesmo que apareça na mesma leitura do fim.
+    const endsWithFinal = lifecycle.some((c) => c.type === "final") && (sport === "esports" || sport === QUARTER_SPORT);
+    if (change && !endsWithFinal) alerts.push({ game, change });
+    for (const item of lifecycle) alerts.push({ game, change: item });
   }
   return { games: result, alerts };
 }
 
+const PHASE_TITLES = {
+  halftime: "⏸ Fim do 1º tempo",
+  second: "▶ Começou o 2º tempo",
+  extra: "⏱ Prorrogação",
+  penalties: "🥅 Disputa de pênaltis",
+};
+
+function lifecycleTitle(game, change) {
+  const esports = game.sport === "esports";
+  const icon = game.sport === QUARTER_SPORT ? "🏀" : esports ? "🎮" : null;
+  if (change.type === "start") return esports ? "🎮 Começou a partida" : `${icon ?? "🟢"} Começou o jogo`;
+  if (change.type === "final") return esports ? "🎮 Fim da partida" : `${icon ?? "🏁"} Fim de jogo`;
+  if (change.phase?.startsWith("map")) return `🎮 Começou o mapa ${change.phase.slice(3)}`;
+  return PHASE_TITLES[change.phase];
+}
+
 export function buildNotification(game, change) {
   const score = change.score ?? game.score;
-  const line = `${game.home} ${score.home} x ${score.away} ${game.away}`;
+  const teams = `${game.home} x ${game.away}`;
+  const line = score ? `${game.home} ${score.home} x ${score.away} ${game.away}` : teams;
   if (change.type === "quarter") {
     return { title: `🏀 Fim do ${change.quarter}º quarto`, message: line, contextMessage: game.tournament ?? "" };
   }
-  if (change.type === "final") {
-    return { title: "🏀 Fim de jogo", message: line, contextMessage: game.tournament ?? "" };
+  if (change.type === "start") {
+    return { title: lifecycleTitle(game, change), message: teams, contextMessage: game.tournament ?? "" };
+  }
+  if (change.type === "final" || change.type === "phase") {
+    return { title: lifecycleTitle(game, change), message: line, contextMessage: game.tournament ?? "" };
   }
   const esports = game.sport === "esports";
   if (change.type === "annulled") {

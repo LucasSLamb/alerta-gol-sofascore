@@ -42,6 +42,18 @@ export function compareScores(previous, current) {
   return null;
 }
 
+// Na disputa de pênaltis, o campo "current" soma as cobranças ao placar do jogo: um 4 x 4
+// com pênaltis 2 x 3 aparece como 6 x 7. Por isso o placar do jogo vem de "display".
+function readShootout(event) {
+  const home = event.homeScore;
+  const away = event.awayScore;
+  if (!Number.isInteger(home?.penalties) && !Number.isInteger(away?.penalties)) return null;
+  return {
+    regular: { home: home?.display ?? 0, away: away?.display ?? 0 },
+    penalties: { home: home?.penalties ?? 0, away: away?.penalties ?? 0 },
+  };
+}
+
 function applyEvent(game, event, nowSeconds) {
   const updated = {
     ...game,
@@ -59,7 +71,9 @@ function applyEvent(game, event, nowSeconds) {
   const score = readScore(event);
   if (!score) return { game: updated, change: null };
 
+  const shootout = readShootout(event);
   const change = compareScores(game?.score, score);
+  if (change?.type === "goal" && shootout) change.type = "penalty";
   if (change?.type === "annulled") {
     const lowerSince = game.lowerSince ?? nowSeconds;
     if (nowSeconds - lowerSince < ANNULLED_CONFIRM_SECONDS) {
@@ -67,7 +81,7 @@ function applyEvent(game, event, nowSeconds) {
     }
   }
   const { lowerSince: _cleared, ...confirmed } = updated;
-  return { game: { ...confirmed, score }, change };
+  return { game: { ...confirmed, score, shootout }, change };
 }
 
 // Quantos quartos já terminaram. A pontuação de um quarto aparece quando ele começa, e o
@@ -185,10 +199,24 @@ function lifecycleTitle(game, change) {
   return PHASE_TITLES[change.phase];
 }
 
+// Placar para mostrar na tela, sem misturar as cobranças de pênalti com os gols do jogo.
+export function scoreText(game) {
+  if (!game.score) return "";
+  if (!game.shootout) return `${game.score.home} – ${game.score.away}`;
+  const { regular, penalties } = game.shootout;
+  return `${regular.home} – ${regular.away} (pên. ${penalties.home} – ${penalties.away})`;
+}
+
+function scoreLine(game) {
+  if (!game.shootout) return `${game.home} ${game.score.home} x ${game.score.away} ${game.away}`;
+  const { regular, penalties } = game.shootout;
+  return `${game.home} ${regular.home} x ${regular.away} ${game.away} (pênaltis ${penalties.home} x ${penalties.away})`;
+}
+
 export function buildNotification(game, change) {
-  const score = change.score ?? game.score;
   const teams = `${game.home} x ${game.away}`;
-  const line = score ? `${game.home} ${score.home} x ${score.away} ${game.away}` : teams;
+  let line = game.score ? scoreLine(game) : teams;
+  if (change.score) line = `${game.home} ${change.score.home} x ${change.score.away} ${game.away}`;
   if (change.type === "quarter") {
     return { title: `🏀 Fim do ${change.quarter}º quarto`, message: line, contextMessage: game.tournament ?? "" };
   }
@@ -197,6 +225,11 @@ export function buildNotification(game, change) {
   }
   if (change.type === "final" || change.type === "phase") {
     return { title: lifecycleTitle(game, change), message: line, contextMessage: game.tournament ?? "" };
+  }
+  if (change.type === "penalty") {
+    const both = change.homeScored && change.awayScored;
+    const title = both ? "🥅 Pênaltis convertidos" : `🥅 Pênalti convertido: ${change.homeScored ? game.home : game.away}`;
+    return { title, message: line, contextMessage: game.tournament ?? "" };
   }
   const esports = game.sport === "esports";
   if (change.type === "annulled") {

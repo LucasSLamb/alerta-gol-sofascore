@@ -15,6 +15,7 @@ globalThis.AlertaGolFavorites = (() => {
 
   const trimScore = (score) => ({
     current: score?.current,
+    display: score?.display,
     period1: score?.period1,
     period2: score?.period2,
     period3: score?.period3,

@@ -6,7 +6,7 @@ Extensão para o Chrome que mostra notificações do Windows sobre os jogos dos 
 
 | Esporte | Aviso |
 |---|---|
-| Futebol, futsal e minifutebol | Início, gol, gol anulado, fim do 1º tempo, início do 2º tempo, prorrogação, pênaltis e fim |
+| Futebol, futsal e minifutebol | Início, gol, gol anulado, fim do 1º tempo, início do 2º tempo, prorrogação, disputa de pênaltis, cada pênalti convertido na disputa e fim |
 | Esports | Início, início de cada mapa, mapa vencido, placar corrigido e fim |
 | Basquete | Início, fim de cada quarto e fim |
 

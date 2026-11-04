@@ -7,6 +7,7 @@ import {
   matchUrl,
   quartersDone,
   readScore,
+  scoreText,
 } from "../alerta-gol-sofascore/core.js";
 import "../alerta-gol-sofascore/favorites.js";
 
@@ -154,6 +155,51 @@ test("futebol: prorrogação e pênaltis", () => {
   assert.deepEqual(titles(state), [], "2º tempo da prorrogação não repete");
   state = applySnapshot(state.games, [footballAt("Penalties", "inprogress", 1, 1, { period2: 1, extra1: 0 })], RECENT, NOW);
   assert.deepEqual(titles(state), ["🥅 Disputa de pênaltis"]);
+});
+
+const shootoutAt = (home, away, penHome, penAway, type = "inprogress", description = "Penalties") =>
+  event(4 + penHome, 4 + penAway, {
+    status: { type, description },
+    homeScore: { current: 4 + penHome, display: 4, normaltime: 4, penalties: penHome },
+    awayScore: { current: 4 + penAway, display: 4, normaltime: 4, penalties: penAway },
+    homeTeam: { shortName: home },
+    awayTeam: { shortName: away },
+  });
+
+test("disputa de pênaltis: cada cobrança convertida avisa, sem misturar com o placar do jogo", () => {
+  let state = applySnapshot({}, [footballAt("2nd extra", "inprogress", 4, 4, { display: 4 })], RECENT, NOW);
+  state = applySnapshot(state.games, [shootoutAt("Brasil", "Argentina", 1, 0)], RECENT, NOW);
+  const types = state.alerts.map((a) => a.change.type);
+  assert.ok(types.includes("penalty"));
+  assert.ok(!types.includes("goal"), "cobrança não pode sair como gol");
+  const kick = state.alerts.find((a) => a.change.type === "penalty");
+  const n = buildNotification(kick.game, kick.change);
+  assert.equal(n.title, "🥅 Pênalti convertido: Brasil");
+  assert.equal(n.message, "Brasil 4 x 4 Argentina (pênaltis 1 x 0)");
+  assert.equal(scoreText(kick.game), "4 – 4 (pên. 1 – 0)");
+
+  state = applySnapshot(state.games, [shootoutAt("Brasil", "Argentina", 1, 1)], RECENT, NOW);
+  assert.deepEqual(titles(state), ["🥅 Pênalti convertido: Argentina"]);
+
+  state = applySnapshot(state.games, [shootoutAt("Brasil", "Argentina", 1, 1)], RECENT, NOW);
+  assert.deepEqual(titles(state), [], "cobrança perdida não muda o placar");
+
+  state = applySnapshot(state.games, [shootoutAt("Brasil", "Argentina", 2, 2)], RECENT, NOW);
+  assert.deepEqual(titles(state), ["🥅 Pênaltis convertidos"]);
+});
+
+test("fim após os pênaltis mostra o placar do jogo e o da disputa", () => {
+  let state = applySnapshot({}, [shootoutAt("Brasil", "Argentina", 2, 3)], RECENT, NOW);
+  state = applySnapshot(state.games, [shootoutAt("Brasil", "Argentina", 2, 3, "finished", "AP")], RECENT, NOW);
+  const end = state.alerts[0];
+  assert.equal(end.change.type, "final");
+  assert.equal(buildNotification(end.game, end.change).message, "Brasil 4 x 4 Argentina (pênaltis 2 x 3)");
+});
+
+test("gol comum continua como gol, e o placar sem disputa não muda", () => {
+  const { games, alerts } = applySnapshot(stored(0, 0), [event(1, 0)], RECENT, NOW);
+  assert.equal(alerts[0].change.type, "goal");
+  assert.equal(scoreText(games[1]), "1 – 0");
 });
 
 test("abrir no meio do jogo não avisa etapas passadas", () => {

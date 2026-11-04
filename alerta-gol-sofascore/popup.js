@@ -1,4 +1,4 @@
-import { matchUrl } from "./core.js";
+import { matchUrl, scoreText } from "./core.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -40,7 +40,7 @@ function renderGame(game) {
 
   const score = document.createElement("span");
   score.className = "score";
-  score.textContent = game.score && game.statusType !== "notstarted" ? `${game.score.home} – ${game.score.away}` : "";
+  score.textContent = game.statusType !== "notstarted" ? scoreText(game) : "";
 
   const status = document.createElement("span");
   status.className = game.statusType === "inprogress" ? "status live" : "status";

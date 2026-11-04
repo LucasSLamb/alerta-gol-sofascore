@@ -51,7 +51,7 @@ function renderGame(game) {
   return li;
 }
 
-function render({ games = {}, paused = false, lastReadAt, lastError, tabMissing }) {
+function render({ games = {}, paused = false, lastReadAt, lastError, tabMissing, blockedUntil = 0 }) {
   $("pause").textContent = paused ? "▶ Retomar alertas" : "⏸ Pausar alertas";
 
   const list = Object.values(games).sort(
@@ -71,11 +71,14 @@ function render({ games = {}, paused = false, lastReadAt, lastError, tabMissing 
 
   if (paused) $("error").textContent = "Alertas pausados.";
   else if (tabMissing) $("error").textContent = "Alertas parados: deixe uma aba do Sofascore aberta. Se já houver uma, recarregue-a.";
-  else $("error").textContent = lastError ?? "";
+  else if (blockedUntil * 1000 > Date.now()) {
+    const until = new Date(blockedUntil * 1000).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    $("error").textContent = `O Sofascore recusou as consultas: avisos de pênalti marcado pausados até ${until}. Os demais continuam.`;
+  } else $("error").textContent = lastError ?? "";
   $("info").textContent = lastReadAt ? `Lido às ${new Date(lastReadAt * 1000).toLocaleTimeString("pt-BR")}` : "";
 }
 
-const KEYS = ["games", "paused", "lastReadAt", "lastError", "tabMissing"];
+const KEYS = ["games", "paused", "lastReadAt", "lastError", "tabMissing", "blockedUntil"];
 const refresh = async () => render(await chrome.storage.local.get(KEYS));
 
 $("pause").addEventListener("click", async () => {

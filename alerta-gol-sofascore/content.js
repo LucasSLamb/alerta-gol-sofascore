@@ -31,11 +31,25 @@
     return { events: AlertaGolFavorites.extractEvents(raw, Math.floor(Date.now() / 1000)), pageAgeSeconds };
   }
 
+  // Busca os lances como a página de uma partida faz, um jogo por vez. Para na primeira
+  // recusa do site: insistir só pioraria, e quem decide a pausa é o background.
+  async function readIncidents(ids) {
+    const results = {};
+    for (const id of ids) {
+      const res = await fetch(`/api/v1/event/${id}/incidents`, { headers: { Accept: "application/json" } });
+      if (res.status === 403 || res.status === 429) return { results, blocked: true };
+      // 404 é o que o site responde enquanto o jogo ainda não tem lances.
+      if (res.status === 404) results[id] = [];
+      else if (res.ok) results[id] = AlertaGolFavorites.trimIncidents((await res.json()).incidents);
+    }
+    return { results, blocked: false };
+  }
+
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type !== "read") return;
-    readEvents()
-      .then(sendResponse)
-      .catch((err) => sendResponse({ error: String(err) }));
+    const task =
+      message?.type === "read" ? readEvents() : message?.type === "incidents" ? readIncidents(message.ids) : null;
+    if (!task) return;
+    task.then(sendResponse).catch((err) => sendResponse({ error: String(err) }));
     return true;
   });
 

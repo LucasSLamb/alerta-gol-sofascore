@@ -63,5 +63,22 @@ globalThis.AlertaGolFavorites = (() => {
       .map(trim);
   }
 
-  return { extractEvents };
+  const INCIDENT_TYPES = new Set(["goal", "inGamePenalty", "varDecision"]);
+
+  // Só o necessário dos lances de um jogo, que costumam vir com muitos dados de cada jogador.
+  function trimIncidents(incidents) {
+    return (incidents ?? [])
+      .filter((i) => INCIDENT_TYPES.has(i.incidentType))
+      .map((i) => ({
+        id: i.id,
+        incidentType: i.incidentType,
+        incidentClass: i.incidentClass,
+        isHome: i.isHome,
+        time: i.time,
+        addedTime: i.addedTime,
+        playerName: i.player?.shortName ?? i.player?.name ?? i.playerName,
+      }));
+  }
+
+  return { extractEvents, trimIncidents };
 })();

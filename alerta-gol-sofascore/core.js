@@ -8,6 +8,14 @@ const QUARTER_SPORT = "basketball";
 const REGULAR_QUARTERS = 4;
 const MAX_MAPS = 5;
 
+// Lances só existem no servidor do site. As consultas são poucas: só jogos ao vivo de
+// esportes com pênalti, no máximo uma por jogo a cada minuto e algumas por rodada.
+const INCIDENT_SPORTS = new Set(["football", "futsal", "minifootball"]);
+const INCIDENT_INTERVAL_SECONDS = 60;
+const MAX_INCIDENT_REQUESTS = 5;
+const BLOCK_PAUSE_MIN_SECONDS = 5 * 60;
+const BLOCK_PAUSE_MAX_SECONDS = 60 * 60;
+
 // Com o Chrome fechado, gols acumulam. Depois de tanto tempo sem ler, o placar vira a nova
 // base em vez de disparar alertas atrasados.
 const STALE_READ_SECONDS = 10 * 60;
@@ -183,6 +191,68 @@ export function applySnapshot(games, events, lastReadAt, nowSeconds, pageAgeSeco
   return { games: result, alerts };
 }
 
+// Pausa depois de o site recusar as consultas: 5, 10, 20, 40 e no máximo 60 minutos.
+export function blockPauseSeconds(blockCount) {
+  return Math.min(BLOCK_PAUSE_MIN_SECONDS * 2 ** Math.max(blockCount - 1, 0), BLOCK_PAUSE_MAX_SECONDS);
+}
+
+export function gamesDueForIncidents(games, nowSeconds) {
+  return Object.values(games)
+    .filter((g) => g.statusType === "inprogress" && INCIDENT_SPORTS.has(g.sport))
+    .filter((g) => nowSeconds - (g.incidentsAt ?? 0) >= INCIDENT_INTERVAL_SECONDS)
+    .sort((a, b) => (a.incidentsAt ?? 0) - (b.incidentsAt ?? 0))
+    .slice(0, MAX_INCIDENT_REQUESTS)
+    .map((g) => g.id);
+}
+
+function classifyIncident({ incidentType, incidentClass }) {
+  const kind = incidentClass ?? "";
+  if (incidentType === "goal") return kind === "penalty" ? "scored" : null;
+  if (incidentType === "inGamePenalty") return /scored|goal/i.test(kind) ? null : "missed";
+  if (incidentType === "varDecision" && /penalty/i.test(kind)) {
+    return /not|cancel|overturn/i.test(kind) ? "cancelled" : "awarded";
+  }
+  return null;
+}
+
+const incidentKey = (i) => String(i.id ?? [i.incidentType, i.incidentClass, i.time, i.addedTime, i.isHome].join("-"));
+
+function incidentDetail({ time, addedTime, playerName }) {
+  if (!Number.isInteger(time)) return playerName ?? "";
+  const added = Number.isInteger(addedTime) && addedTime < 999 ? `+${addedTime}` : "";
+  return [`${time}${added}'`, playerName].filter(Boolean).join(" · ");
+}
+
+// A primeira consulta de um jogo, ou a primeira depois de muito tempo, só registra os
+// lances: quem chega no meio do jogo não recebe aviso de pênalti antigo.
+export function applyIncidents(game, incidents, nowSeconds) {
+  const silent = !game.incidentsAt || nowSeconds - game.incidentsAt > STALE_READ_SECONDS;
+  const seen = new Set(game.incidentsSeen ?? []);
+  const found = [];
+  for (const incident of incidents) {
+    const kind = classifyIncident(incident);
+    const key = incidentKey(incident);
+    if (!kind || seen.has(key)) continue;
+    seen.add(key);
+    found.push({
+      type: "incident",
+      kind,
+      key,
+      team: incident.isHome === false ? game.away : game.home,
+      detail: incidentDetail(incident),
+    });
+  }
+  const updated = { ...game, incidentsAt: nowSeconds, incidentsSeen: [...seen] };
+  return { game: updated, alerts: silent ? [] : found.map((change) => ({ game: updated, change })) };
+}
+
+const INCIDENT_TITLES = {
+  awarded: (team) => `🥅 Pênalti marcado: ${team}`,
+  cancelled: () => "🚫 Pênalti cancelado pelo VAR",
+  missed: (team) => `❌ Pênalti perdido: ${team}`,
+  scored: (team) => `⚽ Gol de pênalti: ${team}`,
+};
+
 const PHASE_TITLES = {
   halftime: "⏸ Fim do 1º tempo",
   second: "▶ Começou o 2º tempo",
@@ -219,6 +289,13 @@ export function buildNotification(game, change) {
   if (change.score) line = `${game.home} ${change.score.home} x ${change.score.away} ${game.away}`;
   if (change.type === "quarter") {
     return { title: `🏀 Fim do ${change.quarter}º quarto`, message: line, contextMessage: game.tournament ?? "" };
+  }
+  if (change.type === "incident") {
+    return {
+      title: INCIDENT_TITLES[change.kind](change.team),
+      message: change.detail ? `${line}\n${change.detail}` : line,
+      contextMessage: game.tournament ?? "",
+    };
   }
   if (change.type === "start") {
     return { title: lifecycleTitle(game, change), message: teams, contextMessage: game.tournament ?? "" };

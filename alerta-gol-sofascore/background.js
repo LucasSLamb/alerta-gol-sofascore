@@ -1,4 +1,11 @@
-import { applySnapshot, buildNotification, matchUrl } from "./core.js";
+import {
+  applyIncidents,
+  applySnapshot,
+  blockPauseSeconds,
+  buildNotification,
+  gamesDueForIncidents,
+  matchUrl,
+} from "./core.js";
 
 const SITE = "https://www.sofascore.com";
 const ALARM = "poll";
@@ -21,7 +28,7 @@ async function readFromTabs() {
     if (tab.url?.includes("/captcha")) continue;
     try {
       const reply = await chrome.tabs.sendMessage(tab.id, { type: "read" });
-      if (reply) return reply;
+      if (reply) return { ...reply, tabId: tab.id };
     } catch {
       // aba sem o content script (por exemplo, aberta antes de recarregar a extensão)
     }
@@ -31,7 +38,7 @@ async function readFromTabs() {
 
 function notify({ game, change }) {
   // O id identifica o lance: se o mesmo gol ou quarto for detectado duas vezes, a notificação é substituída.
-  const detail = change.quarter ?? change.phase ?? `${game.score?.home}-${game.score?.away}`;
+  const detail = change.quarter ?? change.phase ?? change.key ?? `${game.score?.home}-${game.score?.away}`;
   return chrome.notifications.create(`${change.type}|${game.id}|${detail}`, {
     type: "basic",
     iconUrl: "icons/icon128.png",
@@ -45,6 +52,35 @@ async function processEvents({ events, pageAgeSeconds }) {
   const result = applySnapshot(games, events, lastReadAt, now(), pageAgeSeconds);
   await chrome.storage.local.set({ games: result.games, lastReadAt: now(), tabMissing: false, lastError: null });
   await Promise.all(result.alerts.map(notify));
+}
+
+// Pede os lances à aba do site, com a mesma origem de uma página de partida. Se o site
+// recusar, para por um tempo; os avisos que não dependem de consulta continuam.
+async function checkIncidents(tabId) {
+  const { games = {}, blockedUntil = 0, blockCount = 0 } = await chrome.storage.local.get([
+    "games",
+    "blockedUntil",
+    "blockCount",
+  ]);
+  if (blockedUntil > now()) return;
+  const ids = gamesDueForIncidents(games, now());
+  if (!ids.length) return;
+
+  const reply = await chrome.tabs.sendMessage(tabId, { type: "incidents", ids }).catch(() => null);
+  if (!reply || reply.error) return;
+
+  const alerts = [];
+  for (const [id, incidents] of Object.entries(reply.results)) {
+    if (!games[id]) continue;
+    const result = applyIncidents(games[id], incidents, now());
+    games[id] = result.game;
+    alerts.push(...result.alerts);
+  }
+  const block = reply.blocked
+    ? { blockCount: blockCount + 1, blockedUntil: now() + blockPauseSeconds(blockCount + 1) }
+    : { blockCount: 0, blockedUntil: 0 };
+  await chrome.storage.local.set({ games, ...block });
+  await Promise.all(alerts.map(notify));
 }
 
 function poll() {
@@ -63,6 +99,7 @@ function poll() {
       await chrome.storage.local.set({ tabMissing: false, lastError: reply.error });
     } else {
       await processEvents(reply);
+      await checkIncidents(reply.tabId);
     }
   });
 }

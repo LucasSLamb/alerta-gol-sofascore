@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Alerta de Gol para Sofascore",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Notificações no Windows sobre os jogos dos seus favoritos no Sofascore: início, fim, gols, tempos, mapas e quartos.",
   "permissions": ["notifications", "storage", "alarms"],
   "host_permissions": ["https://www.sofascore.com/*"],

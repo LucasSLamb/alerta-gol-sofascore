@@ -6,7 +6,7 @@ Extensão para o Chrome que mostra notificações do Windows sobre os jogos dos 
 
 | Esporte | Aviso |
 |---|---|
-| Futebol, futsal e minifutebol | Início, gol, gol anulado, fim do 1º tempo, início do 2º tempo, prorrogação, disputa de pênaltis, cada pênalti convertido na disputa e fim |
+| Futebol, futsal e minifutebol | Início, gol, gol anulado, pênalti marcado, cancelado, perdido e convertido, fim do 1º tempo, início do 2º tempo, prorrogação, disputa de pênaltis, cada pênalti convertido na disputa e fim |
 | Esports | Início, início de cada mapa, mapa vencido, placar corrigido e fim |
 | Basquete | Início, fim de cada quarto e fim |
 
@@ -24,10 +24,11 @@ Se o aviso de teste não aparecer, confira se o Google Chrome está liberado em 
 
 ## Como funciona
 
-A extensão não faz consultas ao servidor do Sofascore. Ela lê os favoritos e os placares que o próprio site grava no navegador, por isso:
+A extensão lê os favoritos e os placares que o próprio site grava no navegador. Os lances de pênalti não ficam gravados, então, pela aba aberta, ela consulta os lances dos jogos de futebol ao vivo, no máximo uma vez por minuto por jogo. Se o site recusar, essas consultas pausam por 5 a 60 minutos, e os demais avisos continuam. Por isso:
 
 - **Precisa de uma aba do Sofascore aberta**, que pode ficar em segundo plano.
 - O aviso pode levar 1 a 2 minutos depois do lance.
+- O pênalti marcado depende de o site registrar esse lance. Se não registrar, o aviso só sai quando o pênalti é convertido ou perdido.
 - Nos 2 primeiros minutos depois de a aba carregar, o site ainda mostra placares antigos, e a extensão não avisa.
 - O botão **Pausar alertas** suspende os avisos. Ao retomar, o que aconteceu na pausa não gera notificação.
 

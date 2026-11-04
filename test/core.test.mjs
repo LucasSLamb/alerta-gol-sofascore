@@ -1,9 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  applyIncidents,
   applySnapshot,
+  blockPauseSeconds,
   buildNotification,
   compareScores,
+  gamesDueForIncidents,
   matchUrl,
   quartersDone,
   readScore,
@@ -200,6 +203,85 @@ test("gol comum continua como gol, e o placar sem disputa não muda", () => {
   const { games, alerts } = applySnapshot(stored(0, 0), [event(1, 0)], RECENT, NOW);
   assert.equal(alerts[0].change.type, "goal");
   assert.equal(scoreText(games[1]), "1 – 0");
+});
+
+const liveGame = (extra = {}) => ({
+  id: 1, home: "Bahia", away: "Vitória", tournament: "Série A", sport: "football",
+  statusType: "inprogress", score: { home: 1, away: 0 }, incidentsAt: NOW - 60, ...extra,
+});
+const varPenalty = { id: 10, incidentType: "varDecision", incidentClass: "penaltyAwarded", isHome: true, time: 90, addedTime: 2, playerName: "J. Juninho" };
+
+test("pênalti marcado pelo VAR avisa uma vez, com time, minuto e jogador", () => {
+  const first = applyIncidents(liveGame(), [varPenalty], NOW);
+  assert.equal(first.alerts.length, 1);
+  const n = buildNotification(first.alerts[0].game, first.alerts[0].change);
+  assert.equal(n.title, "🥅 Pênalti marcado: Bahia");
+  assert.equal(n.message, "Bahia 1 x 0 Vitória\n90+2' · J. Juninho");
+  assert.deepEqual(applyIncidents(first.game, [varPenalty], NOW + 60).alerts, []);
+});
+
+test("cancelado, perdido e convertido têm aviso próprio, e o time vem do lance", () => {
+  const titleOf = (incident) => {
+    const [alert] = applyIncidents(liveGame(), [incident], NOW).alerts;
+    return alert && buildNotification(alert.game, alert.change).title;
+  };
+  assert.equal(titleOf({ id: 1, incidentType: "varDecision", incidentClass: "penaltyNotAwarded" }), "🚫 Pênalti cancelado pelo VAR");
+  assert.equal(titleOf({ id: 2, incidentType: "inGamePenalty", incidentClass: "missed", isHome: false }), "❌ Pênalti perdido: Vitória");
+  assert.equal(titleOf({ id: 3, incidentType: "goal", incidentClass: "penalty", isHome: false }), "⚽ Gol de pênalti: Vitória");
+});
+
+test("outros lances não avisam", () => {
+  const others = [
+    { id: 1, incidentType: "goal", incidentClass: "regular" },
+    { id: 2, incidentType: "varDecision", incidentClass: "goalAwarded" },
+    { id: 3, incidentType: "inGamePenalty", incidentClass: "scored" },
+  ];
+  assert.deepEqual(applyIncidents(liveGame(), others, NOW).alerts, []);
+});
+
+test("primeira consulta, ou depois de muito tempo, só registra os lances", () => {
+  const first = applyIncidents(liveGame({ incidentsAt: undefined }), [varPenalty], NOW);
+  assert.deepEqual(first.alerts, []);
+  assert.deepEqual(first.game.incidentsSeen, ["10"]);
+  const newer = { ...varPenalty, id: 11 };
+  assert.deepEqual(applyIncidents(first.game, [newer], NOW + 3600).alerts, []);
+  assert.equal(applyIncidents(first.game, [newer], NOW + 60).alerts.length, 1);
+});
+
+test("lance sem id não repete o aviso", () => {
+  const incident = { incidentType: "inGamePenalty", incidentClass: "missed", time: 30 };
+  const first = applyIncidents(liveGame(), [incident], NOW);
+  assert.equal(first.alerts.length, 1);
+  assert.deepEqual(applyIncidents(first.game, [incident], NOW + 60).alerts, []);
+});
+
+test("consulta só jogos ao vivo de esportes com pênalti, com limite por rodada e por minuto", () => {
+  const games = {
+    1: liveGame({ id: 1, incidentsAt: NOW - 30 }),
+    2: liveGame({ id: 2, incidentsAt: NOW - 90 }),
+    3: liveGame({ id: 3, statusType: "finished" }),
+    4: liveGame({ id: 4, sport: "basketball" }),
+    5: liveGame({ id: 5, incidentsAt: undefined }),
+  };
+  assert.deepEqual(gamesDueForIncidents(games, NOW), [5, 2]);
+  const many = Object.fromEntries([...Array(9).keys()].map((i) => [i, liveGame({ id: i, incidentsAt: NOW - 100 - i })]));
+  assert.deepEqual(gamesDueForIncidents(many, NOW), [8, 7, 6, 5, 4]);
+});
+
+test("pausa por recusa cresce e tem limite", () => {
+  assert.deepEqual([1, 2, 3, 4, 5, 9].map(blockPauseSeconds), [300, 600, 1200, 2400, 3600, 3600]);
+});
+
+test("lances são reduzidos ao necessário, sem dados extras do jogador", () => {
+  const raw = [
+    { id: 1, incidentType: "varDecision", incidentClass: "penaltyAwarded", player: { shortName: "A", dateOfBirthTimestamp: 1 }, time: 5 },
+    { id: 2, incidentType: "period", text: "HT" },
+  ];
+  const trimmed = globalThis.AlertaGolFavorites.trimIncidents(raw);
+  assert.equal(trimmed.length, 1);
+  assert.equal(trimmed[0].playerName, "A");
+  assert.equal(trimmed[0].player, undefined);
+  assert.deepEqual(globalThis.AlertaGolFavorites.trimIncidents(undefined), []);
 });
 
 test("abrir no meio do jogo não avisa etapas passadas", () => {

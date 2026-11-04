@@ -7,6 +7,8 @@ const SCORE_ALERT_SPORTS = new Set(["football", "futsal", "minifootball", "espor
 const QUARTER_SPORT = "basketball";
 const REGULAR_QUARTERS = 4;
 const MAX_MAPS = 5;
+// Em esports o status indica o mapa atual: 1001 é "First game", 1002 é "Second game" e assim por diante.
+const MAP_STATUS_BASE = 1000;
 
 // Lances só existem no servidor do site. As consultas são poucas: só jogos ao vivo de
 // esportes com pênalti, no máximo uma por jogo a cada minuto e algumas por rodada.
@@ -137,9 +139,11 @@ function phasesIn(event, sport) {
   const home = event.homeScore;
   if (sport === QUARTER_SPORT) return [];
   if (sport === "esports") {
+    // O status muda assim que o mapa anterior acaba; os pontos do mapa só aparecem depois.
+    const current = event.status?.code - MAP_STATUS_BASE;
     const maps = [];
     for (let n = 2; n <= MAX_MAPS; n++) {
-      if (hasPoints(home, `period${n}`)) maps.push(`map${n}`);
+      if (current === n || hasPoints(home, `period${n}`)) maps.push(`map${n}`);
     }
     return maps;
   }

@@ -320,6 +320,27 @@ test("esports: início, fim e início de cada mapa, e o último mapa sai junto c
   }
 });
 
+test("esports: início do mapa vem do status, antes de existirem pontos do mapa", () => {
+  const liveMap = (code, description, home, periods) => ({
+    ...esportsAt("inprogress", home, 0, periods),
+    status: { code, description, type: "inprogress" },
+  });
+  let state = applySnapshot({}, [liveMap(1001, "First game", 0, { period1: 12 })], RECENT, NOW);
+  assert.deepEqual(state.alerts, []);
+  // Formato real gravado pelo site: placar já mudou, status é 1002 e ainda não há period2.
+  state = applySnapshot(state.games, [liveMap(1002, "Second game", 1, { period1: 13 })], RECENT, NOW);
+  assert.deepEqual(titles(state), ["🎮 FURIA venceu o mapa!", "🎮 Começou o mapa 2"]);
+  state = applySnapshot(state.games, [liveMap(1002, "Second game", 1, { period1: 13, period2: 4 })], RECENT, NOW);
+  assert.deepEqual(titles(state), [], "os pontos do mapa não repetem o aviso");
+  state = applySnapshot(state.games, [liveMap(1003, "Third game", 2, { period1: 13, period2: 13 })], RECENT, NOW);
+  assert.deepEqual(titles(state), ["🎮 FURIA venceu o mapa!", "🎮 Começou o mapa 3"]);
+});
+
+test("leitura do site preserva o código do status", () => {
+  const [item] = extractEvents(record({ tournaments: [7] }, [{ ...siteEvent(1, 50, 7), status: { code: 1002, type: "inprogress", description: "Second game" } }]), NOW);
+  assert.equal(item.status.code, 1002);
+});
+
 test("basquete: início, e o fim do jogo não repete o aviso do último quarto", () => {
   const at = (type, description, periods) => basket(periods, periods, description, type);
   let state = applySnapshot({}, [at("notstarted", "Not started", [])], RECENT, NOW);

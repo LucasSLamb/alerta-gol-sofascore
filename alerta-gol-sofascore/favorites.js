@@ -31,7 +31,7 @@ globalThis.AlertaGolFavorites = (() => {
     slug: event.slug,
     customId: event.customId,
     startTimestamp: event.startTimestamp,
-    status: { type: event.status?.type, description: event.status?.description },
+    status: { code: event.status?.code, type: event.status?.type, description: event.status?.description },
     homeScore: trimScore(event.homeScore),
     awayScore: trimScore(event.awayScore),
     homeTeam: { name: event.homeTeam?.name, shortName: event.homeTeam?.shortName },
